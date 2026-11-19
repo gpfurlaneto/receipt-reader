@@ -1,7 +1,7 @@
 {
   "name": "receipt-reader",
   "version": "0.1.0",
-  "description": "Reads US receipt images and extracts basic data using an LLM, returning it as JSON.",
+  "description": "Reads receipt images and extracts basic data using an LLM, returning it as JSON.",
   "type": "module",
   "exports": {
     ".": {
