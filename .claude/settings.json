@@ -3,13 +3,25 @@
     "deny": ["Read(./.env)"]
   },
   "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/lint-edited-file.mjs\"",
+            "statusMessage": "Linting edited file"
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "cd \"$CLAUDE_PROJECT_DIR\" && npm run typecheck 1>&2 || exit 2",
-            "statusMessage": "Running typecheck"
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && npm run -s check 1>&2 || exit 2",
+            "statusMessage": "Running checks (typecheck, lint, test)"
           }
         ]
       }

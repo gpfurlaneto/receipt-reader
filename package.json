@@ -1,7 +1,7 @@
 {
   "name": "receipt-reader",
   "version": "0.1.0",
-  "description": "Reads US receipt images, extracts basic data using an LLM and stores the result.",
+  "description": "Reads US receipt images and extracts basic data using an LLM, returning it as JSON.",
   "type": "module",
   "exports": {
     ".": {
@@ -12,7 +12,9 @@
   "bin": {
     "receipt-reader": "./dist/cli.js"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "engines": {
     "node": ">=24"
   },
@@ -20,10 +22,16 @@
     "start": "node --env-file-if-exists=.env src/cli.ts",
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc && tsc -p tsconfig.lib.json",
-    "test": "node --test"
+    "lint": "eslint .",
+    "test": "node --test",
+    "check": "npm run typecheck && npm run lint && npm test",
+    "prepare": "git config core.hooksPath .githooks"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/node": "^24.0.0",
-    "typescript": "^5.9.0"
+    "eslint": "^10.15.0",
+    "typescript": "^5.9.0",
+    "typescript-eslint": "^8.73.0"
   }
 }
