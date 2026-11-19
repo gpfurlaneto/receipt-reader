@@ -6,17 +6,17 @@ export interface ReadReceiptOptions {
 }
 
 export interface ReadReceiptResult {
-  status: "success" | "not_a_receipt" | "failed" | "ignored";
+  status: "success" | "not_a_receipt";
 }
 
 /**
  * Library entry point. Must stay environment-agnostic (no fs, process or
  * console) so it can be used from Node, the CLI or a web project.
  */
-export async function readReceipt(
+export function readReceipt(
   options: ReadReceiptOptions,
 ): Promise<ReadReceiptResult> {
-  // TODO: hash -> reserve -> store image -> extract -> normalize -> save.
+  // TODO: hash -> extract -> normalize -> warnings -> return JSON.
   void options;
-  throw new Error("Not implemented");
+  return Promise.reject(new Error("Not implemented"));
 }

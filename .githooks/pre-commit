@@ -1,0 +1,6 @@
+#!/bin/sh
+# Runs every project check (typecheck, lint, test) before each commit.
+# A non-zero exit cancels the commit.
+# Activated by `npm install`, through the "prepare" script in package.json.
+
+npm run -s check
