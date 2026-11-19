@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "deny": ["Read(./.env)"]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && npm run typecheck 1>&2 || exit 2",
+            "statusMessage": "Running typecheck"
+          }
+        ]
+      }
+    ]
+  }
+}

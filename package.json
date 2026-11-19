@@ -1,0 +1,29 @@
+{
+  "name": "receipt-reader",
+  "version": "0.1.0",
+  "description": "Reads US receipt images, extracts basic data using an LLM and stores the result.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "receipt-reader": "./dist/cli.js"
+  },
+  "files": ["dist"],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env src/cli.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc && tsc -p tsconfig.lib.json",
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
+  }
+}
