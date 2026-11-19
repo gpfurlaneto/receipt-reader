@@ -1,9 +1,10 @@
 # AGENTS.md
 
 ## Project
-`receipt-reader` reads images of US receipts, checks that the image is a receipt,
-extracts basic data with an LLM and returns the result as JSON. It does not verify
-authenticity; it transcribes what the image shows.
+`receipt-reader` reads receipt images, checks that the image is a receipt, extracts basic
+data with an LLM and returns the result as JSON. It does not verify authenticity; it
+transcribes what the image shows. The code is generic; support grows by market: Brazil
+first, then the US (see the plan).
 
 **It is a library first, CLI second.** It stores nothing: no database and no image files.
 Callers decide whether and where to save the result.
@@ -42,7 +43,10 @@ Callers decide whether and where to save the result.
 - Load adapters with a dynamic `import()`; `npm run lint` rejects static imports of them.
 - The CLI writes results to stdout as JSON, errors to stderr, and exits non-zero on failure.
 - Keep the LLM behind a small interface supplied by the caller.
+- Never extract the consumer's CPF (LGPD). The model must ignore it.
 - Never hardcode API keys or connection strings.
+- Receipt images, labels and per-receipt eval details stay in `data/` (gitignored); this repo
+  is public. Only aggregated eval metrics go in `evals/results/`.
 - Handle transient LLM failures inside the library (retries, refusal fallback). Throw only
   when the receipt can't be read; there is no `failed` status in the result.
 

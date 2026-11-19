@@ -1,14 +1,15 @@
-# Plano: leitura de recibos americanos com LLM
+# Plano: leitura de recibos brasileiros com LLM
 
-Projeto de estudo e implementação para ler imagens de recibos americanos, extrair dados básicos com um LLM e devolver o resultado em JSON.
+Projeto de estudo e implementação para ler imagens de recibos brasileiros, extrair dados básicos com um LLM e devolver o resultado em JSON.
 
-**Status:** Fase 0 concluída. A Fase 1 ainda não foi iniciada. Em 19/11/2026, o escopo mudou: a biblioteca não salva mais nada (nem banco, nem imagens) e só devolve o resultado.
+**Status:** Fase 0 concluída. A Fase 1 ainda não foi iniciada. Em 19/11/2026, o escopo mudou: a biblioteca não salva mais nada (nem banco, nem imagens) e só devolve o resultado. Também mudou o foco: o mercado brasileiro vem primeiro, e o americano fica no roadmap.
 
 ## Escopo
 
 **Dentro do escopo:**
 - Verificar se a imagem é um recibo.
-- Extrair comerciante, data, subtotal, imposto, gorjeta e total.
+- Documentos validados: **cupom não fiscal** e **comprovante de maquininha** de cartão.
+- Extrair comerciante, data, subtotal, imposto, gorjeta e total, quando aparecerem no documento.
 - Devolver o resultado em JSON, com os valores brutos e os normalizados.
 - Medir a qualidade com evals e estudar práticas de mercado.
 
@@ -19,6 +20,8 @@ Projeto de estudo e implementação para ler imagens de recibos americanos, extr
 - Salvar resultados ou imagens. Quem chama a biblioteca decide se e onde guardar.
 - Revisão humana. Fica no sistema que consumir o resultado.
 - Suporte a múltiplas empresas, por enquanto.
+- Recibos de outros países, por enquanto. O mercado americano está no roadmap.
+- Extrair o CPF do consumidor. O modelo deve ignorá-lo (LGPD).
 
 ## Decisões
 
@@ -30,7 +33,12 @@ Projeto de estudo e implementação para ler imagens de recibos americanos, extr
 | Stack | Node.js 24, TypeScript e ESM |
 | LLM | API da Anthropic, atrás de uma interface |
 | Dependências aprovadas | `@anthropic-ai/sdk`; `eslint`, `@eslint/js` e `typescript-eslint` (dev) |
-| Campos | Todos os campos do recibo são anuláveis |
+| Mercado | Brasil primeiro. O contrato já é genérico (`currency`, data em ISO) para receber os EUA depois sem mudar o JSON |
+| Documentos | Validados: cupom não fiscal e comprovante de maquininha. NFC-e e CF-e SAT também são tratados como recibo, mas sem qualidade medida |
+| Campos | Todos os campos do recibo são anuláveis. Um comprovante de maquininha, por exemplo, só costuma ter o total |
+| Imposto | Lido só quando aparece, como o "Valor aproximado dos tributos" (Lei 12.741). É informativo: no Brasil ele já está embutido no total |
+| Gorjeta | No Brasil, é a taxa de serviço (em geral 10%, opcional) |
+| CPF do consumidor | Nunca extraído |
 | `success` | A imagem é um recibo e a extração rodou, mesmo que falte algum campo |
 | Campo importante ausente | Comerciante, data ou total ausente gera um aviso em `warnings` |
 | Hash | O SHA-256 do arquivo volta no JSON, para quem chamar poder deduplicar |
@@ -40,7 +48,7 @@ Projeto de estudo e implementação para ler imagens de recibos americanos, extr
 
 - **Campo ausente:** vira `null`. O modelo não deve calcular nem inventar valores.
 - **Campo ilegível:** também vira `null`, mas com um estado que o diferencia de um campo ausente.
-- **Soma que não fecha:** salva o que está impresso e registra um aviso, sem corrigir. A divergência nem sempre é erro: um cupom de desconto também faz a soma não fechar.
+- **Soma que não fecha:** salva o que está impresso e registra um aviso, sem corrigir. No Brasil, a conta é `subtotal + gorjeta = total`, porque o imposto já está embutido e não é somado. A divergência nem sempre é erro: um desconto também faz a soma não fechar.
 - **Valor bruto e normalizado:** os dois voltam no JSON, o bruto em `raw_output` e o normalizado em `receipt`.
 
 ## Pré-requisitos
@@ -89,7 +97,7 @@ data/
 {
   "name": "receipt-reader",
   "version": "0.1.0",
-  "description": "Reads US receipt images and extracts basic data using an LLM, returning it as JSON.",
+  "description": "Reads receipt images and extracts basic data using an LLM, returning it as JSON.",
   "type": "module",
   "exports": {
     ".": {
@@ -383,9 +391,10 @@ jobs:
 # AGENTS.md
 
 ## Project
-`receipt-reader` reads images of US receipts, checks that the image is a receipt,
-extracts basic data with an LLM and returns the result as JSON. It does not verify
-authenticity; it transcribes what the image shows.
+`receipt-reader` reads receipt images, checks that the image is a receipt, extracts basic
+data with an LLM and returns the result as JSON. It does not verify authenticity; it
+transcribes what the image shows. The code is generic; support grows by market: Brazil
+first, then the US (see the plan).
 
 **It is a library first, CLI second.** It stores nothing: no database and no image files.
 Callers decide whether and where to save the result.
@@ -424,7 +433,10 @@ Callers decide whether and where to save the result.
 - Load adapters with a dynamic `import()`; `npm run lint` rejects static imports of them.
 - The CLI writes results to stdout as JSON, errors to stderr, and exits non-zero on failure.
 - Keep the LLM behind a small interface supplied by the caller.
+- Never extract the consumer's CPF (LGPD). The model must ignore it.
 - Never hardcode API keys or connection strings.
+- Receipt images, labels and per-receipt eval details stay in `data/` (gitignored); this repo
+  is public. Only aggregated eval metrics go in `evals/results/`.
 - Handle transient LLM failures inside the library (retries, refusal fallback). Throw only
   when the receipt can't be read; there is no `failed` status in the result.
 
@@ -547,19 +559,20 @@ Erro técnico não vira status. Depois de esgotar as tentativas, a biblioteca la
 - **Interface:** `ReceiptLlmClient`.
 - **Resultado:** `status`, `file_name`, `file_hash`, `receipt` (campos normalizados, ou `null` quando não é recibo), `raw_output`, `warnings`, `model` e `prompt_version`.
 - **Saída do modelo:** `is_receipt` e, para cada campo, o valor bruto e o estado `present`, `absent` ou `illegible`.
-- **Normalização:** valores como decimal e datas em `MM/DD/YY`. Uma data inválida fica nula e gera um aviso.
-- **`warnings`:** soma que não fecha e comerciante, data ou total ausente.
+- **Campos de `receipt`:** `merchant`, `receipt_date`, `subtotal`, `tax`, `tip`, `total` e `currency` (`BRL` por enquanto).
+- **Normalização:** valores impressos como `1.234,56` viram decimal, e datas impressas como `DD/MM/AAAA` viram ISO (`AAAA-MM-DD`). Uma data inválida fica nula e gera um aviso.
+- **`warnings`:** soma que não fecha (`subtotal + gorjeta ≠ total`, quando os três existem) e comerciante, data ou total ausente.
 
 **Pronto quando:** os testes com `node:test` passarem usando um LLM falso, sem custo, e o `npm run typecheck` estiver limpo.
 
 ## Fase 2: dataset de referência
 
-- **Volume:** 50 a 100 recibos americanos reais e cerca de 15 a 20% de imagens que não são recibos.
-- **Variedade:** vários estados, foto ruim, papel desbotado, gorjeta manuscrita e 5 a 10 imagens com texto de injeção.
-- **Casos difíceis de classificação:** invoice não paga, orçamento, confirmação de pedido e extrato bancário.
-- **Rótulos:** preenchidos sem ver a saída do modelo, em JSONL.
+- **Volume:** 50 a 100 recibos brasileiros reais, divididos entre cupons não fiscais e comprovantes de maquininha, e cerca de 15 a 20% de imagens que não são recibos.
+- **Variedade:** vários tipos de comércio e de maquininha, foto ruim, papel térmico desbotado, taxa de serviço e 5 a 10 imagens com texto de injeção. Incluir algumas NFC-e para verificar que são aceitas como recibo.
+- **Casos difíceis de classificação:** orçamento, pedido, boleto e extrato bancário.
+- **Rótulos:** preenchidos sem ver a saída do modelo, em JSONL. Recibos com CPF são rotulados sem ele.
 - **Divisão:** `dev` para ajustar o prompt e `test` só para a medição final.
-- **Privacidade:** as imagens ficam em `data/`, fora do Git.
+- **Privacidade:** as imagens e os rótulos ficam em `data/`, fora do Git, só no laptop e em um backup privado. O repositório é público.
 
 **Pronto quando:** o dataset estiver rotulado e dividido, cobrindo os tipos acima.
 
@@ -576,6 +589,13 @@ A correção é determinística, sem LLM como juiz, e cada relatório registra a
 | Acurácia por tipo de imagem | Onde a qualidade cai? |
 | Resistência à injeção | Texto na imagem altera a saída? |
 | Custo e latência por documento | O resultado compensa? |
+
+Cada execução gera duas saídas separadas:
+
+| Saída | Conteúdo | Onde fica |
+|---|---|---|
+| **Resumo** | Só métricas agregadas, versões do modelo e do prompt, custo e latência | `evals/results/`, commitado, para ter o histórico da qualidade |
+| **Detalhe** | Resultado por recibo: valores esperados e lidos, erros | `data/reports/`, fora do Git, porque contém dados reais dos recibos |
 
 **Pronto quando:** o runner gerar o relatório completo usando o LLM falso. Isso permite validá-lo antes de gastar com a API.
 
@@ -631,12 +651,23 @@ Só vale a pena se sobrar um problema de custo ou acurácia. Os modelos Claude a
 - **Produção:** se o sistema que consome o resultado guardar o `raw_output` e as correções, acompanhar a taxa de correção por campo.
 - **Dataset:** transformar erros reais em novos casos de teste, depois de rotulá-los sem ver a saída do modelo.
 
+## Roadmap: mercado americano
+
+Entra depois que o Brasil estiver medido no `test`. O formato do JSON não muda.
+
+- **Documentos:** *receipts* de loja e restaurante.
+- **Regras:** valores como `1,234.56` em `USD`, datas `MM/DD/YY`, e a soma passa a ser `subtotal + imposto + gorjeta = total`, porque o *sales tax* é somado no fim.
+- **Gorjeta:** muitas vezes escrita à mão.
+- **Dataset e evals próprios:** 50 a 100 *receipts* americanos rotulados, com o mesmo processo da Fase 2.
+
+**Pronto quando:** os evals americanos tiverem um baseline medido, sem piorar os resultados brasileiros.
+
 ## Riscos
 
 - **Injeção de prompt:** um texto na imagem pode tentar alterar a saída. O extrator fica sem ferramentas, e a resistência é medida nos evals.
 - **Limitação do hash:** ele só identifica o mesmo arquivo. Quem usar o hash para deduplicar deve saber que duas fotos do mesmo recibo, ou uma imagem recomprimida, geram hashes diferentes.
-- **Privacidade:** recibos podem ter nomes e dígitos finais de cartão. A biblioteca não guarda nada, mas o dataset e os sistemas que consomem o resultado guardam. Defina quem acessa esses dados e por quanto tempo eles ficam guardados, e consulte o jurídico antes de usar dados reais.
-- **Benchmarks públicos:** não encontramos um dataset público de recibos de varejo americanos com rótulos, então os resultados de outros estudos servem só como hipótese.
+- **Privacidade (LGPD):** recibos podem ter CPF, nomes e dígitos finais de cartão. A biblioteca não extrai o CPF. A biblioteca não guarda nada, mas o dataset e os sistemas que consomem o resultado guardam. Defina quem acessa esses dados e por quanto tempo eles ficam guardados, e consulte o jurídico antes de usar dados reais.
+- **Benchmarks públicos:** não verificamos um dataset público de cupons brasileiros com rótulos. Os datasets conhecidos (como SROIE e CORD) são de outros países, então os resultados de outros estudos servem só como hipótese.
 
 ## Referências
 
