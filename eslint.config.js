@@ -23,6 +23,25 @@ export default defineConfig(
     },
   },
 
+  // node:test functions return promises that the runner already tracks.
+  {
+    files: ["src/**/*.test.ts"],
+    rules: {
+      "@typescript-eslint/no-floating-promises": [
+        "error",
+        {
+          allowForKnownSafeCalls: [
+            {
+              from: "package",
+              package: "node:test",
+              name: ["test", "it", "describe", "suite"],
+            },
+          ],
+        },
+      ],
+    },
+  },
+
   // Printing lives only in the CLI. tsconfig.lib.json can't catch console,
   // because the DOM lib declares it.
   {

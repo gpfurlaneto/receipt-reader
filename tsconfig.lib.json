@@ -3,5 +3,5 @@
   "compilerOptions": {
     "types": []
   },
-  "exclude": ["src/cli.ts", "src/adapters/**", "src/**/*.test.ts"]
+  "exclude": ["src/cli.ts", "src/adapters/**", "src/**/*.test.ts", "src/testing/**"]
 }
