@@ -27,7 +27,11 @@ export type ImageMediaType =
 export interface ReceiptLlmRequest {
   image: Uint8Array;
   mediaType: ImageMediaType;
-  /** Prompt owned by the library; see PROMPT_VERSION. */
+  /**
+   * Prompt owned by the library; see PROMPT_VERSION. Send it as the system
+   * prompt. The user message carries only the image: keeping trusted
+   * instructions apart from untrusted content helps against prompt injection.
+   */
   instructions: string;
   /** JSON Schema of ReceiptModelOutput. */
   outputSchema: Record<string, unknown>;

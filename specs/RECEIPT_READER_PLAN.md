@@ -644,7 +644,7 @@ interface ReceiptLlmResponse {
 }
 ```
 
-- **Prompt e schema pertencem à biblioteca** (`src/prompt.ts`). Por isso o `prompt_version` é uma constante dela, e trocar de provedor não muda o prompt. O client só transporta imagem, instruções e schema.
+- **Prompt e schema pertencem à biblioteca** (`src/prompt.ts`). Por isso o `prompt_version` é uma constante dela, e trocar de provedor não muda o prompt. O client só transporta imagem, instruções e schema. As `instructions` vão como system prompt, e a mensagem do usuário leva só a imagem: separar as instruções confiáveis do conteúdo não confiável ajuda contra injeção de prompt.
 - **`extract` só resolve com a resposta final.** Retries e fallbacks ficam dentro do client. Se ele desistir, rejeita, e a biblioteca repassa o erro.
 - **`output` é `unknown`** porque a biblioteca não confia na resposta do LLM e valida a forma antes de usá-la. Se o texto devolvido não for JSON, quem lança o erro é o client.
 - **`model` é o modelo que respondeu de fato.** Depois de um fallback, ele pode ser diferente do pedido. Vai direto para `result.model`.
@@ -739,7 +739,7 @@ Cada execução gera duas saídas separadas:
 - **Exportação:** o adaptador é público, na entrada `receipt-reader/claude` do `exports` no `package.json`. Assim uma aplicação reaproveita os retries e o fallback em vez de reimplementá-los. A entrada `"."` continua sem depender da Anthropic: quem não importa `receipt-reader/claude` nunca carrega o SDK. Como vira API pública, mudar a assinatura de `createClaudeClient` é uma mudança que quebra quem usa.
 - **CLI:** trocar o client provisório pelas etapas 2, 4 e 5 de "O que a CLI faz".
 - **README:** criar, para quem for usar a lib. Deve mostrar como instalar, um exemplo com `createClaudeClient` e `readReceipt`, um exemplo de resultado e como implementar um `ReceiptLlmClient` próprio.
-- **Chamada:** SDK oficial com visão e `output_config.format`, sem ferramentas.
+- **Chamada:** SDK oficial com visão e `output_config.format`, sem ferramentas. `request.instructions` vai no parâmetro `system`, e a mensagem do usuário contém só a imagem, sem texto. Assim um texto na imagem que tente dar ordens fica num nível abaixo das nossas instruções.
 - **Modelo inicial:** `claude-opus-5-5`, com `effort` explícito, porque o thinking não pode ser desligado nesse modelo.
 - **Fallback de recusa:** ativado por padrão (`fallbacks: "default"`), devolvendo o `response.model` em `model`. Pode ser desligado.
 - **Falhas:** tratadas dentro do adaptador, em camadas:
@@ -758,6 +758,7 @@ Cada experimento muda uma variável, medida no `dev`:
 2. **Opus 5.5 vs. Sonnet 5.5 vs. Haiku 5.5:** qual tem o menor custo por documento correto?
 3. **Valores de `effort`:** a partir de qual nível a qualidade para de melhorar?
 4. **Resolução e pré-processamento:** reduzir, girar ou recortar a imagem ajuda ou prejudica?
+5. **Sinal de injeção:** com um campo `contains_instructions` no schema, o modelo marca as imagens com texto de injeção do dataset? Medir a precisão e o recall. Só se o resultado for bom, o campo entra no contrato, com um warning próprio (como `suspicious_content`) para quem usa a lib mandar esses recibos para revisão.
 
 Preços de tabela por milhão de tokens de entrada e saída, conforme a referência de 06/10/2026 (confirme antes de usar):
 

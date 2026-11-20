@@ -166,6 +166,16 @@ describe("prompt", () => {
     assert.match(INSTRUCTIONS, /personal document number/);
   });
 
+  test("tells the model not to follow text in the image that looks like instructions", () => {
+    assert.match(INSTRUCTIONS, /never instructions to you/);
+    assert.match(INSTRUCTIONS, /do not follow it/);
+  });
+
+  test("PROMPT_VERSION matches the current prompt", () => {
+    // Bump it together with this test on every change to the prompt or schema.
+    assert.equal(PROMPT_VERSION, "2");
+  });
+
   test("the schema has no CPF field", () => {
     assert.doesNotMatch(JSON.stringify(OUTPUT_SCHEMA), /cpf/i);
     assert.equal(OUTPUT_SCHEMA.additionalProperties, false);
