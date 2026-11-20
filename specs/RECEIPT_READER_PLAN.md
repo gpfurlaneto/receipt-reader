@@ -2,7 +2,7 @@
 
 Projeto de estudo e implementação para ler imagens de recibos brasileiros, extrair dados básicos com um LLM e devolver o resultado em JSON.
 
-**Status:** Fase 0 concluída. A Fase 1 ainda não foi iniciada. Em 19/11/2026, o escopo mudou: a biblioteca não salva mais nada (nem banco, nem imagens) e só devolve o resultado. Também mudou o foco: o mercado brasileiro vem primeiro, e o americano fica no roadmap.
+**Status:** Fases 0 e 1 concluídas. A Fase 2 ainda não foi iniciada. Em 19/11/2026, o escopo mudou: a biblioteca não salva mais nada (nem banco, nem imagens) e só devolve o resultado. Também mudou o foco: o mercado brasileiro vem primeiro, e o americano fica no roadmap.
 
 ## Escopo
 
@@ -21,7 +21,7 @@ Projeto de estudo e implementação para ler imagens de recibos brasileiros, ext
 - Revisão humana. Fica no sistema que consumir o resultado.
 - Suporte a múltiplas empresas, por enquanto.
 - Recibos de outros países, por enquanto. O mercado americano está no roadmap.
-- Extrair o CPF do consumidor. O modelo deve ignorá-lo (LGPD).
+- Extrair o CPF ou outros números de documento pessoal do consumidor, como RG e CNH. O modelo deve ignorá-los (LGPD).
 
 ## Decisões
 
@@ -32,13 +32,13 @@ Projeto de estudo e implementação para ler imagens de recibos brasileiros, ext
 | Persistência | Nenhuma. A biblioteca não grava em banco nem salva imagens |
 | Stack | Node.js 24, TypeScript e ESM |
 | LLM | API da Anthropic, atrás de uma interface |
-| Dependências aprovadas | `@anthropic-ai/sdk`; `eslint`, `@eslint/js` e `typescript-eslint` (dev) |
+| Dependências aprovadas | `@anthropic-ai/sdk`; `zod`; `eslint`, `@eslint/js` e `typescript-eslint` (dev) |
 | Mercado | Brasil primeiro. O contrato já é genérico (`currency`, data em ISO) para receber os EUA depois sem mudar o JSON |
 | Documentos | Validados: cupom não fiscal e comprovante de maquininha. NFC-e e CF-e SAT também são tratados como recibo, mas sem qualidade medida |
 | Campos | Todos os campos do recibo são anuláveis. Um comprovante de maquininha, por exemplo, só costuma ter o total |
 | Imposto | Lido só quando aparece, como o "Valor aproximado dos tributos" (Lei 12.741). É informativo: no Brasil ele já está embutido no total |
 | Gorjeta | No Brasil, é a taxa de serviço (em geral 10%, opcional) |
-| CPF do consumidor | Nunca extraído |
+| CPF e documentos pessoais | Nunca extraídos. Vale para o CPF e para outros números de documento pessoal do consumidor, como RG e CNH |
 | `success` | A imagem é um recibo e a extração rodou, mesmo que falte algum campo |
 | Campo importante ausente | Comerciante, data ou total ausente gera um aviso em `warnings` |
 | Hash | O SHA-256 do arquivo volta no JSON, para quem chamar poder deduplicar |
@@ -166,7 +166,7 @@ data/
     "declaration": true,
     "rewriteRelativeImportExtensions": true
   },
-  "exclude": ["src/**/*.test.ts"]
+  "exclude": ["src/**/*.test.ts", "src/testing/**"]
 }
 ```
 
@@ -180,7 +180,7 @@ Verifica a biblioteca sem os tipos do Node, para que `process`, `Buffer` e impor
   "compilerOptions": {
     "types": []
   },
-  "exclude": ["src/cli.ts", "src/adapters/**", "src/**/*.test.ts"]
+  "exclude": ["src/cli.ts", "src/adapters/**", "src/**/*.test.ts", "src/testing/**"]
 }
 ```
 
@@ -211,6 +211,25 @@ export default defineConfig(
     extends: [tseslint.configs.recommendedTypeChecked],
     languageOptions: {
       parserOptions: { projectService: true },
+    },
+  },
+
+  // node:test functions return promises that the runner already tracks.
+  {
+    files: ["src/**/*.test.ts"],
+    rules: {
+      "@typescript-eslint/no-floating-promises": [
+        "error",
+        {
+          allowForKnownSafeCalls: [
+            {
+              from: "package",
+              package: "node:test",
+              name: ["test", "it", "describe", "suite"],
+            },
+          ],
+        },
+      ],
     },
   },
 
@@ -249,7 +268,8 @@ export default defineConfig(
 
 ```text
 # Copy this file to .env and fill in the values. Never commit .env.
-# Used only by the CLI. The library receives ready-made clients as arguments.
+# Used only by the CLI and the eval runner. The library and the adapters receive
+# values as arguments.
 
 # Anthropic API key, created in the Claude Console.
 ANTHROPIC_API_KEY=
@@ -400,14 +420,26 @@ first, then the US (see the plan).
 Callers decide whether and where to save the result.
 
 ## Structure
-- `src/index.ts`: public API. No Node-only APIs.
+- `src/index.ts`: public API: `readReceipt` and the contract types. No Node-only APIs.
+- `src/types.ts`: the public contract (options, LLM client, result). A change here changes
+  the JSON that callers receive.
+- `src/model-output.ts`: zod schema of the model output, its single source. Its type, the
+  JSON Schema sent to the LLM and the validation all come from it; never write them by hand.
+- `src/prompt.ts`: prompt and output schema sent to the LLM. Bump `PROMPT_VERSION` on
+  every change, so eval reports can tell versions apart.
+- Other `src/*.ts` (except `src/cli.ts`): library steps. Same rule as `src/index.ts`.
 - `src/cli.ts`: CLI entry point. Handles arguments, input files, printing and exit codes.
-- `src/adapters/` (created with the first adapter): Node-only or provider-specific code,
-  imported dynamically by the CLI.
+- `src/**/*.test.ts`: tests, next to the module they cover. They never call a real API;
+  when they need a client, they use the fake LLM.
+- `src/testing/`: test-only helpers (fake LLM client, output builders). Not published.
+  Don't rename it to `test/`: `node --test` runs every file inside a `test/` folder.
+- `src/adapters/` (created in Phase 4): Node-only or provider-specific code, imported
+  dynamically by the CLI. The Claude adapter will also be exported as `receipt-reader/claude`.
 - `specs/RECEIPT_READER_PLAN.md`: scope, decisions and phases. Read it before starting a phase.
 
 ## Setup
-- Copy `.env.example` to `.env` to run the CLI. Only the CLI reads these variables.
+- Copy `.env.example` to `.env` to run the CLI or the eval runner. Only they read these
+  variables; the library and the adapters receive values as arguments.
 - `npm install` activates the git pre-commit hook in `.githooks/`, which runs `npm run check`.
   Never bypass it with `git commit --no-verify`.
 - CI (`.github/workflows/ci.yml`) runs `npm run check` and `npm run build` on every push
@@ -433,7 +465,8 @@ Callers decide whether and where to save the result.
 - Load adapters with a dynamic `import()`; `npm run lint` rejects static imports of them.
 - The CLI writes results to stdout as JSON, errors to stderr, and exits non-zero on failure.
 - Keep the LLM behind a small interface supplied by the caller.
-- Never extract the consumer's CPF (LGPD). The model must ignore it.
+- Never extract the consumer's CPF or other personal document numbers, such as RG or CNH
+  (LGPD). The model must ignore them.
 - Never hardcode API keys or connection strings.
 - Receipt images, labels and per-receipt eval details stay in `data/` (gitignored); this repo
   is public. Only aggregated eval metrics go in `evals/results/`.
@@ -444,6 +477,7 @@ Callers decide whether and where to save the result.
 - Don't add dependencies without asking.
 - Already approved in the plan:
   - `@anthropic-ai/sdk`
+  - `zod` (validation and JSON Schema of the model output)
   - `eslint`, `@eslint/js` and `typescript-eslint` (dev)
 ```
 
@@ -530,20 +564,52 @@ readReceipt(imagem, llm)   ← sem APIs do Node
 JSON com o resultado (nada é salvo)
 ```
 
-### Configuração da CLI
+### Configuração da CLI e do runner de evals
 
 | Variável | Uso |
 |---|---|
 | `ANTHROPIC_API_KEY` | Chave da API |
 
-Esse valor fica em um `.env` fora do Git, criado a partir do `.env.example`. A CLI sai com erro se a variável não estiver definida, antes de processar qualquer arquivo. A biblioteca recebe o cliente pronto e nunca lê essa variável.
+Esse valor fica em um `.env` fora do Git, criado a partir do `.env.example`. Só a CLI e o runner de evals leem a variável, porque são os programas iniciados no terminal. Eles a passam ao adaptador, que cria o client entregue à biblioteca. Nem a biblioteca nem o adaptador leem a variável.
+
+- **CLI:** sai com erro se a variável não estiver definida, antes de processar qualquer arquivo.
+- **Runner de evals:** com o adaptador Claude (Fase 4 em diante), também sai com erro antes de processar qualquer recibo. Com o LLM falso (Fase 3), não precisa da variável.
+
+### O que a CLI faz
+
+A CLI é a ponte entre o terminal e a biblioteca: prepara as entradas, chama `readReceipt` e imprime o resultado.
+
+1. Lê o argumento `--file`. Se faltar, mostra o uso e sai com código 1.
+2. Confere a `ANTHROPIC_API_KEY`. Se faltar, sai com código 1 antes de ler qualquer arquivo.
+3. Lê o arquivo e obtém os bytes da imagem.
+4. Carrega o adaptador Claude com `import()` dinâmico.
+5. Cria o client com a chave e o passa como `llm`.
+6. Chama `readReceipt({ image, fileName, llm })`.
+7. Imprime o JSON no stdout. Em caso de erro, imprime o motivo no stderr e sai com código 1.
+
+**Até a Fase 4**, o adaptador não existe. A CLI faz as etapas 1, 3, 6 e 7 de verdade e usa no lugar do `llm` um client provisório, que sempre falha com "Claude adapter not available yet (Phase 4)". Assim a leitura do arquivo, a checagem do formato e a saída de erros já funcionam, e a Fase 4 só troca o client provisório pelas etapas 2, 4 e 5.
 
 ### Fluxo de uma imagem
 
-1. Calcular o SHA-256 do arquivo original com Web Crypto.
-2. Chamar o LLM uma vez para classificar e extrair. As falhas temporárias são tratadas aqui (veja a Fase 4).
-3. Normalizar valores e datas no código e calcular os `warnings`.
-4. Devolver o JSON. Nada é gravado.
+Cada etapa e o tipo que ela produz. Os tipos estão em `src/types.ts` e detalhados na Fase 1.
+
+```text
+ CLI / aplicação
+   │  ReadReceiptOptions { image, fileName, llm }
+   ▼
+ 1. Detectar o formato pelos bytes ──► ImageMediaType         (vazio ou não suportado → lança, sem chamar o LLM)
+ 2. Calcular o SHA-256 (Web Crypto) ─► string (file_hash)
+ 3. Chamar o LLM uma vez ────────────► ReceiptLlmResponse { output: unknown, model }
+      ReceiptLlmRequest { image, mediaType,   (retries e fallback dentro do client, veja a Fase 4;
+        instructions, outputSchema }            se ele desistir → lança)
+ 4. Validar a saída do LLM ──────────► ReceiptModelOutput     (forma errada → lança)
+      │
+      ├─ is_receipt = false ─────────► ReadReceiptResult { status: "not_a_receipt", receipt: null, warnings: [] }
+      ▼
+ 5. Normalizar valores e datas ──────► Receipt + ReceiptWarning[]   (invalid_date, invalid_amount)
+ 6. Conferir campos e soma ──────────► ReceiptWarning[]             (missing_field, illegible_field, sum_mismatch)
+ 7. Montar o resultado ──────────────► ReadReceiptResult { status: "success", ... }   (nada é gravado)
+```
 
 ### Status
 
@@ -552,16 +618,77 @@ Esse valor fica em um `.env` fora do Git, criado a partir do `.env.example`. A C
 | `success` | A imagem é um recibo e a extração rodou, mesmo que falte algum campo |
 | `not_a_receipt` | A imagem não é um recibo |
 
-Erro técnico não vira status. Depois de esgotar as tentativas, a biblioteca lança um erro com o motivo, e a CLI o mostra no stderr e sai com código 1.
+Erro técnico não vira status. A biblioteca lança um erro com o motivo quando a imagem não é suportada, quando a saída do LLM vem malformada ou quando o client desiste depois de esgotar as tentativas. A CLI mostra o motivo no stderr e sai com código 1.
 
 ## Fase 1: contrato
 
-- **Interface:** `ReceiptLlmClient`.
-- **Resultado:** `status`, `file_name`, `file_hash`, `receipt` (campos normalizados, ou `null` quando não é recibo), `raw_output`, `warnings`, `model` e `prompt_version`.
-- **Saída do modelo:** `is_receipt` e, para cada campo, o valor bruto e o estado `present`, `absent` ou `illegible`.
+Os tipos ficam em `src/types.ts`, que é a referência. Esta seção registra as decisões por trás deles.
+
+A forma da saída do modelo é definida uma única vez, com zod, em `src/model-output.ts`. Dela saem o tipo TypeScript, o JSON Schema enviado ao LLM e a validação da resposta, então os três não podem divergir. Um teste trava o JSON Schema gerado, para que uma mudança no schema ou no zod não altere sem aviso o que a API recebe.
+
+### Interface com o LLM
+
+```ts
+interface ReceiptLlmClient {
+  extract(request: ReceiptLlmRequest): Promise<ReceiptLlmResponse>;
+}
+interface ReceiptLlmRequest {
+  image: Uint8Array;
+  mediaType: "image/jpeg" | "image/png" | "image/webp" | "image/gif";
+  instructions: string;                  // prompt da biblioteca
+  outputSchema: Record<string, unknown>; // JSON Schema da saída do modelo
+}
+interface ReceiptLlmResponse {
+  output: unknown; // JSON já parseado pelo client
+  model: string;   // modelo que respondeu de fato
+}
+```
+
+- **Prompt e schema pertencem à biblioteca** (`src/prompt.ts`). Por isso o `prompt_version` é uma constante dela, e trocar de provedor não muda o prompt. O client só transporta imagem, instruções e schema. As `instructions` vão como system prompt, e a mensagem do usuário leva só a imagem: separar as instruções confiáveis do conteúdo não confiável ajuda contra injeção de prompt.
+- **`extract` só resolve com a resposta final.** Retries e fallbacks ficam dentro do client. Se ele desistir, rejeita, e a biblioteca repassa o erro.
+- **`output` é `unknown`** porque a biblioteca não confia na resposta do LLM e valida a forma antes de usá-la. Se o texto devolvido não for JSON, quem lança o erro é o client.
+- **`model` é o modelo que respondeu de fato.** Depois de um fallback, ele pode ser diferente do pedido. Vai direto para `result.model`.
+- **O `fileName` nunca é enviado ao LLM.** Ele só volta em `file_name`, para evitar injeção ou vazamento pelo nome do arquivo.
+- **O formato da imagem é detectado pelos bytes**, nunca pela extensão. Imagem vazia ou formato não suportado lança erro antes de chamar o LLM.
+
+### Saída do modelo (`raw_output`)
+
+`is_receipt` e seis campos (`merchant`, `receipt_date`, `subtotal`, `tax`, `tip`, `total`), cada um com `value` e `state`. O `value` é o texto como impresso (`"1.234,56"`, `"19/11/26"`), sem conversão pelo modelo.
+
+| `state` | Significado | `value` | Em `receipt` |
+|---|---|---|---|
+| `present` | Impresso e legível | Texto não vazio | Normalizado |
+| `present` | — | `null` ou vazio | Saída inválida: lança erro |
+| `absent` | Não impresso no documento | `null` | `null` |
+| `illegible` | Impresso, mas ilegível | `null` | `null` |
+| `absent` ou `illegible` | — | Com texto | `null` (o texto fica só em `raw_output`) |
+
+- **Sem campo de CPF**, e chaves extras são rejeitadas (`additionalProperties: false` no schema e na validação). O CPF não tem onde aparecer.
+- **O prompt manda ignorar o CPF e qualquer outro número de documento pessoal**, como RG e CNH. A restrição é mais ampla que o CPF de propósito, pela LGPD. O CNPJ do estabelecimento não é documento pessoal.
+- **Com `is_receipt: false`**, os seis campos continuam obrigatórios (o prompt pede `absent`). A biblioteca valida a forma, mas não os lê.
+
+### Resultado
+
+`status`, `file_name`, `file_hash` (SHA-256 em hex minúsculo), `receipt` (`null` quando não é recibo), `raw_output`, `warnings`, `model` e `prompt_version`.
+
 - **Campos de `receipt`:** `merchant`, `receipt_date`, `subtotal`, `tax`, `tip`, `total` e `currency` (`BRL` por enquanto).
-- **Normalização:** valores impressos como `1.234,56` viram decimal, e datas impressas como `DD/MM/AAAA` viram ISO (`AAAA-MM-DD`). Uma data inválida fica nula e gera um aviso.
-- **`warnings`:** soma que não fecha (`subtotal + gorjeta ≠ total`, quando os três existem) e comerciante, data ou total ausente.
+- **Valores** viram **string decimal** com duas casas: `"1.234,56"` → `"1234.56"`. String, e não número, para evitar erros de ponto flutuante em quem consome o JSON. Aceita `1.234,56`, `1234,56` e `R$ 12,50`; qualquer outro formato fica `null`.
+- **Datas** em `DD/MM/AAAA` ou `DD/MM/AA` (AA vira 20AA, comum em maquininhas) viram ISO (`AAAA-MM-DD`). Datas que não existem, como `31/02`, ficam `null`.
+- **`not_a_receipt`:** `receipt` é `null`, `warnings` é vazio e o `raw_output` é mantido.
+
+### `warnings`
+
+Cada aviso tem `code`, `message` e, quando se refere a um campo, `field`.
+
+| `code` | Quando |
+|---|---|
+| `missing_field` | Comerciante, data ou total com estado `absent` |
+| `illegible_field` | Comerciante, data ou total com estado `illegible` |
+| `invalid_date` | Data impressa num formato que não dá para ler, ou que não existe (como `31/02`) |
+| `invalid_amount` | Valor impresso num formato que não dá para ler |
+| `sum_mismatch` | `subtotal + gorjeta ≠ total`, quando os três existem. Conferido em centavos; o imposto não entra |
+
+Um campo inválido gera só `invalid_date` ou `invalid_amount`, sem `missing_field` repetido.
 
 **Pronto quando:** os testes com `node:test` passarem usando um LLM falso, sem custo, e o `npm run typecheck` estiver limpo.
 
@@ -601,15 +728,25 @@ Cada execução gera duas saídas separadas:
 
 ## Fase 4: adaptador Claude e baseline
 
-- **Dependência:** `@anthropic-ai/sdk`.
-- **Chamada:** SDK oficial com visão e `output_config.format`, sem ferramentas.
+- **Dependência:** `@anthropic-ai/sdk`, em `dependencies`, porque a CLI publicada precisa dele.
+- **Formato:** `src/adapters/claude.ts` exporta uma função que cria o client. O adaptador é o código; o client é o objeto que ele devolve e que vai em `llm`.
+
+  ```ts
+  export function createClaudeClient(options: { apiKey: string }): ReceiptLlmClient
+  ```
+
+- **Chave:** o adaptador recebe a chave por argumento e nunca lê `process.env`. Quem chama decide de onde ela vem: a CLI e o runner de evals leem a `ANTHROPIC_API_KEY`; outra aplicação usa a fonte que tiver.
+- **Exportação:** o adaptador é público, na entrada `receipt-reader/claude` do `exports` no `package.json`. Assim uma aplicação reaproveita os retries e o fallback em vez de reimplementá-los. A entrada `"."` continua sem depender da Anthropic: quem não importa `receipt-reader/claude` nunca carrega o SDK. Como vira API pública, mudar a assinatura de `createClaudeClient` é uma mudança que quebra quem usa.
+- **CLI:** trocar o client provisório pelas etapas 2, 4 e 5 de "O que a CLI faz".
+- **README:** criar, para quem for usar a lib. Deve mostrar como instalar, um exemplo com `createClaudeClient` e `readReceipt`, um exemplo de resultado e como implementar um `ReceiptLlmClient` próprio.
+- **Chamada:** SDK oficial com visão e `output_config.format`, sem ferramentas. `request.instructions` vai no parâmetro `system`, e a mensagem do usuário contém só a imagem, sem texto. Assim um texto na imagem que tente dar ordens fica num nível abaixo das nossas instruções.
 - **Modelo inicial:** `claude-opus-5-5`, com `effort` explícito, porque o thinking não pode ser desligado nesse modelo.
-- **Fallback de recusa:** ativado por padrão (`fallbacks: "default"`), gravando o `response.model`. Pode ser desligado.
-- **Falhas:** tratadas no harness, em camadas:
+- **Fallback de recusa:** ativado por padrão (`fallbacks: "default"`), devolvendo o `response.model` em `model`. Pode ser desligado.
+- **Falhas:** tratadas dentro do adaptador, em camadas:
   1. O SDK repete sozinho os erros temporários: 408, 409, 429, 5xx e falhas de conexão, com 2 tentativas extras por padrão (`maxRetries`).
   2. Recusas passam pelo fallback de modelo.
   3. Uma resposta cortada por `max_tokens` é repetida uma vez com um limite maior.
-  4. Se nada disso resolver, a biblioteca lança um erro com o motivo.
+  4. Se nada disso resolver, o adaptador rejeita com o motivo, e a biblioteca repassa o erro.
 - **Segurança:** o conteúdo da imagem é tratado como dado, e o extrator não tem ferramentas nem permissões.
 
 **Pronto quando:** houver um baseline zero-shot medido no `dev`. As metas de acurácia só serão definidas depois disso.
@@ -621,6 +758,7 @@ Cada experimento muda uma variável, medida no `dev`:
 2. **Opus 5.5 vs. Sonnet 5.5 vs. Haiku 5.5:** qual tem o menor custo por documento correto?
 3. **Valores de `effort`:** a partir de qual nível a qualidade para de melhorar?
 4. **Resolução e pré-processamento:** reduzir, girar ou recortar a imagem ajuda ou prejudica?
+5. **Sinal de injeção:** com um campo `contains_instructions` no schema, o modelo marca as imagens com texto de injeção do dataset? Medir a precisão e o recall. Só se o resultado for bom, o campo entra no contrato, com um warning próprio (como `suspicious_content`) para quem usa a lib mandar esses recibos para revisão.
 
 Preços de tabela por milhão de tokens de entrada e saída, conforme a referência de 06/10/2026 (confirme antes de usar):
 
@@ -666,7 +804,7 @@ Entra depois que o Brasil estiver medido no `test`. O formato do JSON não muda.
 
 - **Injeção de prompt:** um texto na imagem pode tentar alterar a saída. O extrator fica sem ferramentas, e a resistência é medida nos evals.
 - **Limitação do hash:** ele só identifica o mesmo arquivo. Quem usar o hash para deduplicar deve saber que duas fotos do mesmo recibo, ou uma imagem recomprimida, geram hashes diferentes.
-- **Privacidade (LGPD):** recibos podem ter CPF, nomes e dígitos finais de cartão. A biblioteca não extrai o CPF. A biblioteca não guarda nada, mas o dataset e os sistemas que consomem o resultado guardam. Defina quem acessa esses dados e por quanto tempo eles ficam guardados, e consulte o jurídico antes de usar dados reais.
+- **Privacidade (LGPD):** recibos podem ter CPF, nomes e dígitos finais de cartão. A biblioteca não extrai o CPF nem outros números de documento pessoal. A biblioteca não guarda nada, mas o dataset e os sistemas que consomem o resultado guardam. Defina quem acessa esses dados e por quanto tempo eles ficam guardados, e consulte o jurídico antes de usar dados reais.
 - **Benchmarks públicos:** não verificamos um dataset público de cupons brasileiros com rótulos. Os datasets conhecidos (como SROIE e CORD) são de outros países, então os resultados de outros estudos servem só como hipótese.
 
 ## Referências

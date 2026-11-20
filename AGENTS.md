@@ -10,14 +10,26 @@ first, then the US (see the plan).
 Callers decide whether and where to save the result.
 
 ## Structure
-- `src/index.ts`: public API. No Node-only APIs.
+- `src/index.ts`: public API: `readReceipt` and the contract types. No Node-only APIs.
+- `src/types.ts`: the public contract (options, LLM client, result). A change here changes
+  the JSON that callers receive.
+- `src/model-output.ts`: zod schema of the model output, its single source. Its type, the
+  JSON Schema sent to the LLM and the validation all come from it; never write them by hand.
+- `src/prompt.ts`: prompt and output schema sent to the LLM. Bump `PROMPT_VERSION` on
+  every change, so eval reports can tell versions apart.
+- Other `src/*.ts` (except `src/cli.ts`): library steps. Same rule as `src/index.ts`.
 - `src/cli.ts`: CLI entry point. Handles arguments, input files, printing and exit codes.
-- `src/adapters/` (created with the first adapter): Node-only or provider-specific code,
-  imported dynamically by the CLI.
+- `src/**/*.test.ts`: tests, next to the module they cover. They never call a real API;
+  when they need a client, they use the fake LLM.
+- `src/testing/`: test-only helpers (fake LLM client, output builders). Not published.
+  Don't rename it to `test/`: `node --test` runs every file inside a `test/` folder.
+- `src/adapters/` (created in Phase 4): Node-only or provider-specific code, imported
+  dynamically by the CLI. The Claude adapter will also be exported as `receipt-reader/claude`.
 - `specs/RECEIPT_READER_PLAN.md`: scope, decisions and phases. Read it before starting a phase.
 
 ## Setup
-- Copy `.env.example` to `.env` to run the CLI. Only the CLI reads these variables.
+- Copy `.env.example` to `.env` to run the CLI or the eval runner. Only they read these
+  variables; the library and the adapters receive values as arguments.
 - `npm install` activates the git pre-commit hook in `.githooks/`, which runs `npm run check`.
   Never bypass it with `git commit --no-verify`.
 - CI (`.github/workflows/ci.yml`) runs `npm run check` and `npm run build` on every push
@@ -43,7 +55,8 @@ Callers decide whether and where to save the result.
 - Load adapters with a dynamic `import()`; `npm run lint` rejects static imports of them.
 - The CLI writes results to stdout as JSON, errors to stderr, and exits non-zero on failure.
 - Keep the LLM behind a small interface supplied by the caller.
-- Never extract the consumer's CPF (LGPD). The model must ignore it.
+- Never extract the consumer's CPF or other personal document numbers, such as RG or CNH
+  (LGPD). The model must ignore them.
 - Never hardcode API keys or connection strings.
 - Receipt images, labels and per-receipt eval details stay in `data/` (gitignored); this repo
   is public. Only aggregated eval metrics go in `evals/results/`.
@@ -54,4 +67,5 @@ Callers decide whether and where to save the result.
 - Don't add dependencies without asking.
 - Already approved in the plan:
   - `@anthropic-ai/sdk`
+  - `zod` (validation and JSON Schema of the model output)
   - `eslint`, `@eslint/js` and `typescript-eslint` (dev)
