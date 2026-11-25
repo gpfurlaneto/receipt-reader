@@ -1,66 +1,66 @@
-# Plano: leitura de recibos brasileiros com LLM
+# Plan: reading Brazilian receipts with an LLM
 
-Projeto de estudo e implementação para ler imagens de recibos brasileiros, extrair dados básicos com um LLM e devolver o resultado em JSON.
+A study and implementation project to read images of Brazilian receipts, extract basic data with an LLM and return the result as JSON.
 
-**Status:** Fases 0 e 1 concluídas. A Fase 2 ainda não foi iniciada. Em 19/11/2026, o escopo mudou: a biblioteca não salva mais nada (nem banco, nem imagens) e só devolve o resultado. Também mudou o foco: o mercado brasileiro vem primeiro, e o americano fica no roadmap.
+**Status:** Phases 0, 1 and 2 done. Phase 2 uses a synthetic dataset, not real receipts (see that phase's section). On 2026-11-19 the scope changed: the library no longer saves anything (no database, no images) and only returns the result. The focus changed too: the Brazilian market comes first, and the US market moves to the roadmap.
 
-## Escopo
+## Scope
 
-**Dentro do escopo:**
-- Verificar se a imagem é um recibo.
-- Documentos validados: **cupom não fiscal** e **comprovante de maquininha** de cartão.
-- Extrair comerciante, data, subtotal, imposto, gorjeta e total, quando aparecerem no documento.
-- Devolver o resultado em JSON, com os valores brutos e os normalizados.
-- Medir a qualidade com evals e estudar práticas de mercado.
+**In scope:**
+- Check whether the image is a receipt.
+- Validated documents: **cupom não fiscal** (non-fiscal receipt) and **comprovante de maquininha** (card terminal slip).
+- Extract merchant, date, subtotal, tax, tip and total, when they appear on the document.
+- Return the result as JSON, with both raw and normalized values.
+- Measure quality with evals and study industry practices.
 
-**Fora do escopo:**
-- Validar se o recibo é verdadeiro. O sistema transcreve o que a imagem mostra.
-- Cruzar dados com transações, categorizar despesas ou verificar requisitos fiscais.
-- Extrair os itens do recibo, por enquanto.
-- Salvar resultados ou imagens. Quem chama a biblioteca decide se e onde guardar.
-- Revisão humana. Fica no sistema que consumir o resultado.
-- Suporte a múltiplas empresas, por enquanto.
-- Recibos de outros países, por enquanto. O mercado americano está no roadmap.
-- Extrair o CPF ou outros números de documento pessoal do consumidor, como RG e CNH. O modelo deve ignorá-los (LGPD).
+**Out of scope:**
+- Validating whether the receipt is genuine. The system transcribes what the image shows.
+- Matching data against transactions, categorizing expenses or checking tax requirements.
+- Extracting receipt line items, for now.
+- Saving results or images. The caller decides whether and where to store them.
+- Human review. It belongs to the system that consumes the result.
+- Multi-company support, for now.
+- Receipts from other countries, for now. The US market is on the roadmap.
+- Extracting the consumer's CPF or other personal document numbers, such as RG and CNH. The model must ignore them (LGPD).
 
-## Decisões
+## Decisions
 
-| Tema | Decisão |
+| Topic | Decision |
 |---|---|
-| Projeto | Novo repositório `receipt-reader`, separado deste |
-| Formato | Biblioteca que devolve JSON, com uma CLI que imprime esse JSON |
-| Persistência | Nenhuma. A biblioteca não grava em banco nem salva imagens |
-| Stack | Node.js 24, TypeScript e ESM |
-| LLM | API da Anthropic, atrás de uma interface |
-| Dependências aprovadas | `@anthropic-ai/sdk`; `zod`; `eslint`, `@eslint/js` e `typescript-eslint` (dev) |
-| Mercado | Brasil primeiro. O contrato já é genérico (`currency`, data em ISO) para receber os EUA depois sem mudar o JSON |
-| Documentos | Validados: cupom não fiscal e comprovante de maquininha. NFC-e e CF-e SAT também são tratados como recibo, mas sem qualidade medida |
-| Campos | Todos os campos do recibo são anuláveis. Um comprovante de maquininha, por exemplo, só costuma ter o total |
-| Imposto | Lido só quando aparece, como o "Valor aproximado dos tributos" (Lei 12.741). É informativo: no Brasil ele já está embutido no total |
-| Gorjeta | No Brasil, é a taxa de serviço (em geral 10%, opcional) |
-| CPF e documentos pessoais | Nunca extraídos. Vale para o CPF e para outros números de documento pessoal do consumidor, como RG e CNH |
-| `success` | A imagem é um recibo e a extração rodou, mesmo que falte algum campo |
-| Campo importante ausente | Comerciante, data ou total ausente gera um aviso em `warnings` |
-| Hash | O SHA-256 do arquivo volta no JSON, para quem chamar poder deduplicar |
-| Falhas | Falhas temporárias são tratadas dentro da biblioteca. Ela só lança erro quando não consegue ler o recibo |
+| Project | New `receipt-reader` repository, separate from this one |
+| Format | Library that returns JSON, with a CLI that prints that JSON |
+| Persistence | None. The library does not write to a database or save images |
+| Stack | Node.js 24, TypeScript and ESM |
+| LLM | Anthropic API, behind an interface |
+| Approved dependencies | `@anthropic-ai/sdk`; `zod`; `eslint`, `@eslint/js` and `typescript-eslint` (dev) |
+| Market | Brazil first. The contract is already generic (`currency`, ISO dates) so the US can be added later without changing the JSON |
+| Documents | Validated: cupom não fiscal and comprovante de maquininha. NFC-e and CF-e SAT are also treated as receipts, but their quality is not measured |
+| Fields | Every receipt field is nullable. A card terminal slip, for example, usually only has the total |
+| Tax | Read only when it appears, such as the "Valor aproximado dos tributos" (Law 12.741). It is informational: in Brazil it is already included in the total |
+| Tip | In Brazil, this is the service charge (usually 10%, optional) |
+| CPF and personal documents | Never extracted. This covers the CPF and the consumer's other personal document numbers, such as RG and CNH |
+| `success` | The image is a receipt and extraction ran, even if some field is missing |
+| Missing key field | A missing merchant, date or total adds a warning to `warnings` |
+| Hash | The file's SHA-256 is returned in the JSON so callers can deduplicate |
+| Failures | Transient failures are handled inside the library. It only throws when it can't read the receipt |
 
-### Princípios de leitura
+### Reading principles
 
-- **Campo ausente:** vira `null`. O modelo não deve calcular nem inventar valores.
-- **Campo ilegível:** também vira `null`, mas com um estado que o diferencia de um campo ausente.
-- **Soma que não fecha:** salva o que está impresso e registra um aviso, sem corrigir. No Brasil, a conta é `subtotal + gorjeta = total`, porque o imposto já está embutido e não é somado. A divergência nem sempre é erro: um desconto também faz a soma não fechar.
-- **Valor bruto e normalizado:** os dois voltam no JSON, o bruto em `raw_output` e o normalizado em `receipt`.
+- **Missing field:** becomes `null`. The model must not compute or invent values.
+- **Illegible field:** also becomes `null`, but with a state that distinguishes it from a missing field.
+- **Sum that doesn't add up:** keep what is printed and record a warning, without correcting it. In Brazil the math is `subtotal + tip = total`, because tax is already included and is not added. A mismatch isn't always an error: a discount also makes the sum not add up.
+- **Raw and normalized values:** both are returned in the JSON, the raw one in `raw_output` and the normalized one in `receipt`.
 
-## Pré-requisitos
+## Prerequisites
 
-- **Chave da API:** criar no Claude Console, com créditos próprios. A assinatura do Claude Code não cobre o uso da API.
-- **Limite de gastos:** definir no Console, porque os evals consomem créditos.
+- **API key:** create it in the Claude Console, with its own credits. A Claude Code subscription does not cover API usage.
+- **Spend limit:** set one in the Console, because evals consume credits.
 
-## Fase 0: criar o projeto
+## Phase 0: create the project
 
-**Diferença em relação ao `response-generator`:** ele exporta `./src/index.ts`, mas o Node não remove tipos de arquivos dentro de `node_modules`. Para funcionar como biblioteca instalada, o pacote precisa publicar um build em `dist/`. Em desenvolvimento, o `.ts` continua rodando direto.
+**Difference from `response-generator`:** it exports `./src/index.ts`, but Node does not strip types from files inside `node_modules`. To work as an installed library, the package must publish a build in `dist/`. In development, the `.ts` files still run directly.
 
-### 1. Criar a pasta
+### 1. Create the folder
 
 ```bash
 cd /Users/furlaneto/git
@@ -68,7 +68,7 @@ mkdir -p receipt-reader/src && cd receipt-reader
 git init
 ```
 
-### 2. Criar os arquivos
+### 2. Create the files
 
 **`.nvmrc`**
 
@@ -172,7 +172,7 @@ data/
 
 **`tsconfig.lib.json`**
 
-Verifica a biblioteca sem os tipos do Node, para que `process`, `Buffer` e imports `node:` sejam rejeitados. `console` continua passando, porque a lib DOM também o declara.
+Checks the library without Node's types, so `process`, `Buffer` and `node:` imports are rejected. `console` still passes, because the DOM lib also declares it.
 
 ```json
 {
@@ -186,7 +186,7 @@ Verifica a biblioteca sem os tipos do Node, para que `process`, `Buffer` e impor
 
 **`eslint.config.js`**
 
-Aplica as regras recomendadas com checagem de tipos e cobre o que o `tsconfig.lib.json` não pega: `console` fora do `src/cli.ts` e imports estáticos de adaptadores.
+Applies the recommended type-checked rules and covers what `tsconfig.lib.json` doesn't catch: `console` outside `src/cli.ts` and static imports of adapters.
 
 ```javascript
 import js from "@eslint/js";
@@ -277,7 +277,7 @@ ANTHROPIC_API_KEY=
 
 **`.claude/settings.json`**
 
-Bloqueia a leitura do `.env` e define dois hooks. O `PostToolUse` chama o script `.claude/hooks/lint-edited-file.mjs`, que roda o ESLint só no arquivo que o Claude acabou de editar, para avisar do erro na hora. O `Stop` roda o `npm run -s check` (typecheck, lint e testes) no projeto inteiro quando o Claude termina um turno e, se falhar, faz o Claude continuar até corrigir. Essas garantias valem só para o Claude Code.
+Blocks reading `.env` and defines two hooks. `PostToolUse` calls the `.claude/hooks/lint-edited-file.mjs` script, which runs ESLint only on the file Claude just edited, to flag errors right away. `Stop` runs `npm run -s check` (typecheck, lint and tests) on the whole project when Claude finishes a turn and, if it fails, makes Claude keep going until it is fixed. These guarantees apply only to Claude Code.
 
 ```json
 {
@@ -314,7 +314,7 @@ Bloqueia a leitura do `.env` e define dois hooks. O `PostToolUse` chama o script
 
 **`.claude/hooks/lint-edited-file.mjs`**
 
-Roda o ESLint pela API do Node no arquivo editado e mostra só os erros, com no máximo 20 linhas. Usar Node em vez de comandos de shell faz o hook funcionar igual em macOS, Linux e Windows.
+Runs ESLint through its Node API on the edited file and shows only errors, at most 20 lines. Using Node instead of shell commands makes the hook behave the same on macOS, Linux and Windows.
 
 ```javascript
 // PostToolUse hook: lints the file Claude just edited or created.
@@ -358,7 +358,7 @@ process.exit(2);
 
 **`.githooks/pre-commit`**
 
-Roda o `npm run check` antes de cada commit e cancela o commit se algo falhar. Vale para qualquer pessoa ou ferramenta, não só para o Claude Code. O script `prepare` do `package.json` o ativa no `npm install`. Depois de criar o arquivo, torne-o executável com `chmod +x .githooks/pre-commit`.
+Runs `npm run check` before each commit and cancels the commit if anything fails. It applies to any person or tool, not just Claude Code. The `prepare` script in `package.json` activates it on `npm install`. After creating the file, make it executable with `chmod +x .githooks/pre-commit`.
 
 ```sh
 #!/bin/sh
@@ -371,7 +371,7 @@ npm run -s check
 
 **`.github/workflows/ci.yml`**
 
-Roda `npm ci`, `npm run check` e `npm run build` numa máquina limpa do GitHub a cada push na `main` e em todo Pull Request. É a única verificação que não pode ser pulada. Não usa segredos: os testes usam um LLM falso, e os evals com a API real não rodam no CI.
+Runs `npm ci`, `npm run check` and `npm run build` on a clean GitHub machine on every push to `main` and on every pull request. It is the only check that can't be skipped. It uses no secrets: tests use a fake LLM, and evals against the real API don't run in CI.
 
 ```yaml
 name: CI
@@ -541,92 +541,92 @@ try {
 }
 ```
 
-### 3. Instalar e validar
+### 3. Install and validate
 
 ```bash
 npm install
-npm run check              # typecheck, lint e testes
+npm run check              # typecheck, lint and tests
 npm run build
-npm start                  # deve mostrar o uso e sair com código 1
-npm pack --dry-run         # deve listar o conteúdo de dist/
+npm start                  # should print usage and exit with code 1
+npm pack --dry-run         # should list the contents of dist/
 ```
 
-**Pronto quando:** esses comandos se comportarem como indicado e um projeto de teste conseguir instalar o pacote e importar `readReceipt`.
+**Done when:** these commands behave as described and a test project can install the package and import `readReceipt`.
 
-## Arquitetura
+## Architecture
 
 ```text
-CLI (src/cli.ts) ou aplicação Node
+CLI (src/cli.ts) or Node application
         ↓
-readReceipt(imagem, llm)   ← sem APIs do Node
-   └─ ReceiptLlmClient   → adaptador Claude
+readReceipt(image, llm)   ← no Node APIs
+   └─ ReceiptLlmClient   → Claude adapter
         ↓
-JSON com o resultado (nada é salvo)
+JSON with the result (nothing is saved)
 ```
 
-### Configuração da CLI e do runner de evals
+### CLI and eval runner configuration
 
-| Variável | Uso |
+| Variable | Use |
 |---|---|
-| `ANTHROPIC_API_KEY` | Chave da API |
+| `ANTHROPIC_API_KEY` | API key |
 
-Esse valor fica em um `.env` fora do Git, criado a partir do `.env.example`. Só a CLI e o runner de evals leem a variável, porque são os programas iniciados no terminal. Eles a passam ao adaptador, que cria o client entregue à biblioteca. Nem a biblioteca nem o adaptador leem a variável.
+This value lives in a `.env` outside Git, created from `.env.example`. Only the CLI and the eval runner read the variable, because they are the programs started from the terminal. They pass it to the adapter, which creates the client handed to the library. Neither the library nor the adapter reads the variable.
 
-- **CLI:** sai com erro se a variável não estiver definida, antes de processar qualquer arquivo.
-- **Runner de evals:** com o adaptador Claude (Fase 4 em diante), também sai com erro antes de processar qualquer recibo. Com o LLM falso (Fase 3), não precisa da variável.
+- **CLI:** exits with an error if the variable is not set, before processing any file.
+- **Eval runner:** with the Claude adapter (Phase 4 onward), also exits with an error before processing any receipt. With the fake LLM (Phase 3), it doesn't need the variable.
 
-### O que a CLI faz
+### What the CLI does
 
-A CLI é a ponte entre o terminal e a biblioteca: prepara as entradas, chama `readReceipt` e imprime o resultado.
+The CLI is the bridge between the terminal and the library: it prepares the inputs, calls `readReceipt` and prints the result.
 
-1. Lê o argumento `--file`. Se faltar, mostra o uso e sai com código 1.
-2. Confere a `ANTHROPIC_API_KEY`. Se faltar, sai com código 1 antes de ler qualquer arquivo.
-3. Lê o arquivo e obtém os bytes da imagem.
-4. Carrega o adaptador Claude com `import()` dinâmico.
-5. Cria o client com a chave e o passa como `llm`.
-6. Chama `readReceipt({ image, fileName, llm })`.
-7. Imprime o JSON no stdout. Em caso de erro, imprime o motivo no stderr e sai com código 1.
+1. Reads the `--file` argument. If it's missing, prints usage and exits with code 1.
+2. Checks `ANTHROPIC_API_KEY`. If it's missing, exits with code 1 before reading any file.
+3. Reads the file and gets the image bytes.
+4. Loads the Claude adapter with a dynamic `import()`.
+5. Creates the client with the key and passes it as `llm`.
+6. Calls `readReceipt({ image, fileName, llm })`.
+7. Prints the JSON to stdout. On error, prints the reason to stderr and exits with code 1.
 
-**Até a Fase 4**, o adaptador não existe. A CLI faz as etapas 1, 3, 6 e 7 de verdade e usa no lugar do `llm` um client provisório, que sempre falha com "Claude adapter not available yet (Phase 4)". Assim a leitura do arquivo, a checagem do formato e a saída de erros já funcionam, e a Fase 4 só troca o client provisório pelas etapas 2, 4 e 5.
+**Until Phase 4**, the adapter doesn't exist. The CLI really performs steps 1, 3, 6 and 7 and uses a placeholder client as `llm`, which always fails with "Claude adapter not available yet (Phase 4)". That way file reading, format checking and error output already work, and Phase 4 only swaps the placeholder client for steps 2, 4 and 5.
 
-### Fluxo de uma imagem
+### Flow of an image
 
-Cada etapa e o tipo que ela produz. Os tipos estão em `src/types.ts` e detalhados na Fase 1.
+Each step and the type it produces. The types are in `src/types.ts` and detailed in Phase 1.
 
 ```text
- CLI / aplicação
+ CLI / application
    │  ReadReceiptOptions { image, fileName, llm }
    ▼
- 1. Detectar o formato pelos bytes ──► ImageMediaType         (vazio ou não suportado → lança, sem chamar o LLM)
- 2. Calcular o SHA-256 (Web Crypto) ─► string (file_hash)
- 3. Chamar o LLM uma vez ────────────► ReceiptLlmResponse { output: unknown, model }
-      ReceiptLlmRequest { image, mediaType,   (retries e fallback dentro do client, veja a Fase 4;
-        instructions, outputSchema }            se ele desistir → lança)
- 4. Validar a saída do LLM ──────────► ReceiptModelOutput     (forma errada → lança)
+ 1. Detect the format from bytes ────► ImageMediaType         (empty or unsupported → throws, without calling the LLM)
+ 2. Compute SHA-256 (Web Crypto) ────► string (file_hash)
+ 3. Call the LLM once ───────────────► ReceiptLlmResponse { output: unknown, model }
+      ReceiptLlmRequest { image, mediaType,   (retries and fallback inside the client, see Phase 4;
+        instructions, outputSchema }            if it gives up → throws)
+ 4. Validate the LLM output ─────────► ReceiptModelOutput     (wrong shape → throws)
       │
       ├─ is_receipt = false ─────────► ReadReceiptResult { status: "not_a_receipt", receipt: null, warnings: [] }
       ▼
- 5. Normalizar valores e datas ──────► Receipt + ReceiptWarning[]   (invalid_date, invalid_amount)
- 6. Conferir campos e soma ──────────► ReceiptWarning[]             (missing_field, illegible_field, sum_mismatch)
- 7. Montar o resultado ──────────────► ReadReceiptResult { status: "success", ... }   (nada é gravado)
+ 5. Normalize amounts and dates ─────► Receipt + ReceiptWarning[]   (invalid_date, invalid_amount)
+ 6. Check fields and sum ────────────► ReceiptWarning[]             (missing_field, illegible_field, sum_mismatch)
+ 7. Build the result ────────────────► ReadReceiptResult { status: "success", ... }   (nothing is written)
 ```
 
 ### Status
 
-| Status | Significado |
+| Status | Meaning |
 |---|---|
-| `success` | A imagem é um recibo e a extração rodou, mesmo que falte algum campo |
-| `not_a_receipt` | A imagem não é um recibo |
+| `success` | The image is a receipt and extraction ran, even if some field is missing |
+| `not_a_receipt` | The image is not a receipt |
 
-Erro técnico não vira status. A biblioteca lança um erro com o motivo quando a imagem não é suportada, quando a saída do LLM vem malformada ou quando o client desiste depois de esgotar as tentativas. A CLI mostra o motivo no stderr e sai com código 1.
+A technical error is not a status. The library throws an error with the reason when the image is not supported, when the LLM output is malformed, or when the client gives up after exhausting its attempts. The CLI prints the reason to stderr and exits with code 1.
 
-## Fase 1: contrato
+## Phase 1: contract
 
-Os tipos ficam em `src/types.ts`, que é a referência. Esta seção registra as decisões por trás deles.
+The types live in `src/types.ts`, which is the source of truth. This section records the decisions behind them.
 
-A forma da saída do modelo é definida uma única vez, com zod, em `src/model-output.ts`. Dela saem o tipo TypeScript, o JSON Schema enviado ao LLM e a validação da resposta, então os três não podem divergir. Um teste trava o JSON Schema gerado, para que uma mudança no schema ou no zod não altere sem aviso o que a API recebe.
+The shape of the model output is defined once, with zod, in `src/model-output.ts`. The TypeScript type, the JSON Schema sent to the LLM and the response validation all come from it, so the three can't drift apart. A test locks the generated JSON Schema, so a change to the schema or to zod can't silently alter what the API receives.
 
-### Interface com o LLM
+### LLM interface
 
 ```ts
 interface ReceiptLlmClient {
@@ -635,184 +635,201 @@ interface ReceiptLlmClient {
 interface ReceiptLlmRequest {
   image: Uint8Array;
   mediaType: "image/jpeg" | "image/png" | "image/webp" | "image/gif";
-  instructions: string;                  // prompt da biblioteca
-  outputSchema: Record<string, unknown>; // JSON Schema da saída do modelo
+  instructions: string;                  // the library's prompt
+  outputSchema: Record<string, unknown>; // JSON Schema of the model output
 }
 interface ReceiptLlmResponse {
-  output: unknown; // JSON já parseado pelo client
-  model: string;   // modelo que respondeu de fato
+  output: unknown; // JSON already parsed by the client
+  model: string;   // model that actually answered
 }
 ```
 
-- **Prompt e schema pertencem à biblioteca** (`src/prompt.ts`). Por isso o `prompt_version` é uma constante dela, e trocar de provedor não muda o prompt. O client só transporta imagem, instruções e schema. As `instructions` vão como system prompt, e a mensagem do usuário leva só a imagem: separar as instruções confiáveis do conteúdo não confiável ajuda contra injeção de prompt.
-- **`extract` só resolve com a resposta final.** Retries e fallbacks ficam dentro do client. Se ele desistir, rejeita, e a biblioteca repassa o erro.
-- **`output` é `unknown`** porque a biblioteca não confia na resposta do LLM e valida a forma antes de usá-la. Se o texto devolvido não for JSON, quem lança o erro é o client.
-- **`model` é o modelo que respondeu de fato.** Depois de um fallback, ele pode ser diferente do pedido. Vai direto para `result.model`.
-- **O `fileName` nunca é enviado ao LLM.** Ele só volta em `file_name`, para evitar injeção ou vazamento pelo nome do arquivo.
-- **O formato da imagem é detectado pelos bytes**, nunca pela extensão. Imagem vazia ou formato não suportado lança erro antes de chamar o LLM.
+- **The prompt and schema belong to the library** (`src/prompt.ts`). That's why `prompt_version` is a library constant, and switching providers doesn't change the prompt. The client only carries the image, instructions and schema. The `instructions` go in as the system prompt, and the user message carries only the image: separating trusted instructions from untrusted content helps against prompt injection.
+- **`extract` only resolves with the final response.** Retries and fallbacks live inside the client. If it gives up, it rejects, and the library passes the error on.
+- **`output` is `unknown`** because the library doesn't trust the LLM response and validates its shape before using it. If the returned text isn't JSON, the client is the one that throws.
+- **`model` is the model that actually answered.** After a fallback, it may differ from the one requested. It goes straight to `result.model`.
+- **`fileName` is never sent to the LLM.** It is only returned in `file_name`, to prevent injection or leaks through the file name.
+- **The image format is detected from the bytes**, never from the extension. An empty image or unsupported format throws before calling the LLM.
 
-### Saída do modelo (`raw_output`)
+### Model output (`raw_output`)
 
-`is_receipt` e seis campos (`merchant`, `receipt_date`, `subtotal`, `tax`, `tip`, `total`), cada um com `value` e `state`. O `value` é o texto como impresso (`"1.234,56"`, `"19/11/26"`), sem conversão pelo modelo.
+`is_receipt` and six fields (`merchant`, `receipt_date`, `subtotal`, `tax`, `tip`, `total`), each with `value` and `state`. `value` is the text as printed (`"1.234,56"`, `"19/11/26"`), not converted by the model.
 
-| `state` | Significado | `value` | Em `receipt` |
+| `state` | Meaning | `value` | In `receipt` |
 |---|---|---|---|
-| `present` | Impresso e legível | Texto não vazio | Normalizado |
-| `present` | — | `null` ou vazio | Saída inválida: lança erro |
-| `absent` | Não impresso no documento | `null` | `null` |
-| `illegible` | Impresso, mas ilegível | `null` | `null` |
-| `absent` ou `illegible` | — | Com texto | `null` (o texto fica só em `raw_output`) |
+| `present` | Printed and legible | Non-empty text | Normalized |
+| `present` | — | `null` or empty | Invalid output: throws |
+| `absent` | Not printed on the document | `null` | `null` |
+| `illegible` | Printed, but illegible | `null` | `null` |
+| `absent` or `illegible` | — | Has text | `null` (the text stays only in `raw_output`) |
 
-- **Sem campo de CPF**, e chaves extras são rejeitadas (`additionalProperties: false` no schema e na validação). O CPF não tem onde aparecer.
-- **O prompt manda ignorar o CPF e qualquer outro número de documento pessoal**, como RG e CNH. A restrição é mais ampla que o CPF de propósito, pela LGPD. O CNPJ do estabelecimento não é documento pessoal.
-- **Com `is_receipt: false`**, os seis campos continuam obrigatórios (o prompt pede `absent`). A biblioteca valida a forma, mas não os lê.
+- **No CPF field**, and extra keys are rejected (`additionalProperties: false` in the schema and in validation). The CPF has nowhere to appear.
+- **The prompt tells the model to ignore the CPF and any other personal document number**, such as RG and CNH. The restriction is deliberately broader than the CPF, because of the LGPD. The merchant's CNPJ is not a personal document.
+- **With `is_receipt: false`**, the six fields are still required (the prompt asks for `absent`). The library validates the shape but doesn't read them.
 
-### Resultado
+### Result
 
-`status`, `file_name`, `file_hash` (SHA-256 em hex minúsculo), `receipt` (`null` quando não é recibo), `raw_output`, `warnings`, `model` e `prompt_version`.
+`status`, `file_name`, `file_hash` (SHA-256 in lowercase hex), `receipt` (`null` when it's not a receipt), `raw_output`, `warnings`, `model` and `prompt_version`.
 
-- **Campos de `receipt`:** `merchant`, `receipt_date`, `subtotal`, `tax`, `tip`, `total` e `currency` (`BRL` por enquanto).
-- **Valores** viram **string decimal** com duas casas: `"1.234,56"` → `"1234.56"`. String, e não número, para evitar erros de ponto flutuante em quem consome o JSON. Aceita `1.234,56`, `1234,56` e `R$ 12,50`; qualquer outro formato fica `null`.
-- **Datas** em `DD/MM/AAAA` ou `DD/MM/AA` (AA vira 20AA, comum em maquininhas) viram ISO (`AAAA-MM-DD`). Datas que não existem, como `31/02`, ficam `null`.
-- **`not_a_receipt`:** `receipt` é `null`, `warnings` é vazio e o `raw_output` é mantido.
+- **`receipt` fields:** `merchant`, `receipt_date`, `subtotal`, `tax`, `tip`, `total` and `currency` (`BRL` for now).
+- **Amounts** become a **decimal string** with two decimal places: `"1.234,56"` → `"1234.56"`. A string, not a number, to avoid floating-point errors for JSON consumers. Accepts `1.234,56`, `1234,56` and `R$ 12,50`; any other format becomes `null`.
+- **Dates** in `DD/MM/YYYY` or `DD/MM/YY` (YY becomes 20YY, common on card terminals) become ISO (`YYYY-MM-DD`). Dates that don't exist, such as `31/02`, become `null`.
+- **`not_a_receipt`:** `receipt` is `null`, `warnings` is empty and `raw_output` is kept.
 
 ### `warnings`
 
-Cada aviso tem `code`, `message` e, quando se refere a um campo, `field`.
+Each warning has `code`, `message` and, when it refers to a field, `field`.
 
-| `code` | Quando |
+| `code` | When |
 |---|---|
-| `missing_field` | Comerciante, data ou total com estado `absent` |
-| `illegible_field` | Comerciante, data ou total com estado `illegible` |
-| `invalid_date` | Data impressa num formato que não dá para ler, ou que não existe (como `31/02`) |
-| `invalid_amount` | Valor impresso num formato que não dá para ler |
-| `sum_mismatch` | `subtotal + gorjeta ≠ total`, quando os três existem. Conferido em centavos; o imposto não entra |
+| `missing_field` | Merchant, date or total with state `absent` |
+| `illegible_field` | Merchant, date or total with state `illegible` |
+| `invalid_date` | Date printed in a format that can't be read, or that doesn't exist (such as `31/02`) |
+| `invalid_amount` | Amount printed in a format that can't be read |
+| `sum_mismatch` | `subtotal + tip ≠ total`, when all three exist. Checked in cents; tax is not included |
 
-Um campo inválido gera só `invalid_date` ou `invalid_amount`, sem `missing_field` repetido.
+An invalid field produces only `invalid_date` or `invalid_amount`, without a duplicate `missing_field`.
 
-**Pronto quando:** os testes com `node:test` passarem usando um LLM falso, sem custo, e o `npm run typecheck` estiver limpo.
+**Done when:** the `node:test` tests pass using a fake LLM, at no cost, and `npm run typecheck` is clean.
 
-## Fase 2: dataset de referência
+## Phase 2: reference dataset
 
-- **Volume:** 50 a 100 recibos brasileiros reais, divididos entre cupons não fiscais e comprovantes de maquininha, e cerca de 15 a 20% de imagens que não são recibos.
-- **Variedade:** vários tipos de comércio e de maquininha, foto ruim, papel térmico desbotado, taxa de serviço e 5 a 10 imagens com texto de injeção. Incluir algumas NFC-e para verificar que são aceitas como recibo.
-- **Casos difíceis de classificação:** orçamento, pedido, boleto e extrato bancário.
-- **Rótulos:** preenchidos sem ver a saída do modelo, em JSONL. Recibos com CPF são rotulados sem ele.
-- **Divisão:** `dev` para ajustar o prompt e `test` só para a medição final.
-- **Privacidade:** as imagens e os rótulos ficam em `data/`, fora do Git, só no laptop e em um backup privado. O repositório é público.
+**Done on 2026-11-25, with a synthetic dataset.** The images were generated by code (HTML rendered in Chrome, with simulated photo defects), not photographed. The labels come from the spec used to generate each image, so they don't depend on the model output. The decision was to accept the synthetic dataset so as not to block Phases 3 and 4. The risk is that the eval gives optimistic numbers, because rendered text is easier to read than real thermal paper and simulated defects don't always look like real ones.
 
-**Pronto quando:** o dataset estiver rotulado e dividido, cobrindo os tipos acima.
-
-## Fase 3: runner de evals
-
-A correção é determinística, sem LLM como juiz, e cada relatório registra as versões do modelo e do prompt.
-
-| Métrica | O que responde |
+| Item | Result |
 |---|---|
-| Precisão e recall do `is_receipt` | O gate funciona? |
-| Acurácia por campo | Qual campo falha mais? |
-| Documento 100% correto | Quantos recibos não precisarão de correção? |
-| Alucinação | O modelo inventa campos ausentes? |
-| Acurácia por tipo de imagem | Onde a qualidade cai? |
-| Resistência à injeção | Texto na imagem altera a saída? |
-| Custo e latência por documento | O resultado compensa? |
+| Location | `data/examples/images/` and `data/examples/labels.jsonl` (one line per image) |
+| Volume | 100 images: 81 receipts and 19 non-receipts (19%) |
+| Receipts | 36 cupons não fiscais, 37 card terminal slips, 5 NFC-e and 3 CF-e SAT |
+| Non-receipts | Quote, order, boleto, bank statement, PIX, transfer, paid boleto and withdrawal receipts, and menu |
+| Variety | 10 card terminals, 9 images with injection, 10 with service charge, discount, dark, blurry, rotated and crumpled photos, and faded paper |
+| Split | 60 in `dev` and 40 in `test` |
 
-Cada execução gera duas saídas separadas:
+Each line has `file`, `id`, `split`, `doc_type`, `tags`, `is_receipt` and `fields`. The six fields follow the Phase 1 states (`present`, `absent`, `illegible`), with `raw` and `value`.
 
-| Saída | Conteúdo | Onde fica |
+**Open item:** 19 labels have dates with dots, hyphens or in ISO (`05.11.2025`, `21-06-2025`, `2025-11-08`) and a normalized `value`, but `parseBrDate` only accepts `DD/MM/YYYY` and `DD/MM/YY`. Extend the parser or change those values to `null` before Phase 3.
+
+Original criteria:
+
+- **Volume:** 50 to 100 real Brazilian receipts, split between cupons não fiscais and card terminal slips, and about 15 to 20% images that aren't receipts.
+- **Variety:** several kinds of merchants and card terminals, bad photos, faded thermal paper, service charge, and 5 to 10 images with injection text. Include a few NFC-e to check that they are accepted as receipts.
+- **Hard classification cases:** quote, order, boleto and bank statement.
+- **Labels:** filled in without seeing the model output, in JSONL. Receipts with a CPF are labeled without it.
+- **Split:** `dev` for tuning the prompt and `test` only for the final measurement.
+- **Privacy:** images and labels stay in `data/`, outside Git, only on the laptop and in a private backup. The repository is public.
+
+**Done when:** the dataset is labeled and split, covering the types above.
+
+## Phase 3: eval runner
+
+Scoring is deterministic, with no LLM as judge, and each report records the model and prompt versions.
+
+| Metric | What it answers |
+|---|---|
+| `is_receipt` precision and recall | Does the gate work? |
+| Per-field accuracy | Which field fails most? |
+| Fully correct document | How many receipts won't need correction? |
+| Hallucination | Does the model invent missing fields? |
+| Accuracy by image type | Where does quality drop? |
+| Injection resistance | Does text in the image change the output? |
+| Cost and latency per document | Is the result worth it? |
+
+Each run produces two separate outputs:
+
+| Output | Content | Where it goes |
 |---|---|---|
-| **Resumo** | Só métricas agregadas, versões do modelo e do prompt, custo e latência | `evals/results/`, commitado, para ter o histórico da qualidade |
-| **Detalhe** | Resultado por recibo: valores esperados e lidos, erros | `data/reports/`, fora do Git, porque contém dados reais dos recibos |
+| **Summary** | Only aggregated metrics, model and prompt versions, cost and latency | `evals/results/`, committed, to keep a quality history |
+| **Detail** | Per-receipt result: expected and read values, errors | `data/reports/`, outside Git, because it contains real receipt data |
 
-**Pronto quando:** o runner gerar o relatório completo usando o LLM falso. Isso permite validá-lo antes de gastar com a API.
+**Done when:** the runner produces the full report using the fake LLM. This lets us validate it before spending on the API.
 
-## Fase 4: adaptador Claude e baseline
+## Phase 4: Claude adapter and baseline
 
-- **Dependência:** `@anthropic-ai/sdk`, em `dependencies`, porque a CLI publicada precisa dele.
-- **Formato:** `src/adapters/claude.ts` exporta uma função que cria o client. O adaptador é o código; o client é o objeto que ele devolve e que vai em `llm`.
+- **Dependency:** `@anthropic-ai/sdk`, in `dependencies`, because the published CLI needs it.
+- **Shape:** `src/adapters/claude.ts` exports a function that creates the client. The adapter is the code; the client is the object it returns and that goes in `llm`.
 
   ```ts
   export function createClaudeClient(options: { apiKey: string }): ReceiptLlmClient
   ```
 
-- **Chave:** o adaptador recebe a chave por argumento e nunca lê `process.env`. Quem chama decide de onde ela vem: a CLI e o runner de evals leem a `ANTHROPIC_API_KEY`; outra aplicação usa a fonte que tiver.
-- **Exportação:** o adaptador é público, na entrada `receipt-reader/claude` do `exports` no `package.json`. Assim uma aplicação reaproveita os retries e o fallback em vez de reimplementá-los. A entrada `"."` continua sem depender da Anthropic: quem não importa `receipt-reader/claude` nunca carrega o SDK. Como vira API pública, mudar a assinatura de `createClaudeClient` é uma mudança que quebra quem usa.
-- **CLI:** trocar o client provisório pelas etapas 2, 4 e 5 de "O que a CLI faz".
-- **README:** criar, para quem for usar a lib. Deve mostrar como instalar, um exemplo com `createClaudeClient` e `readReceipt`, um exemplo de resultado e como implementar um `ReceiptLlmClient` próprio.
-- **Chamada:** SDK oficial com visão e `output_config.format`, sem ferramentas. `request.instructions` vai no parâmetro `system`, e a mensagem do usuário contém só a imagem, sem texto. Assim um texto na imagem que tente dar ordens fica num nível abaixo das nossas instruções.
-- **Modelo inicial:** `claude-opus-5-5`, com `effort` explícito, porque o thinking não pode ser desligado nesse modelo.
-- **Fallback de recusa:** ativado por padrão (`fallbacks: "default"`), devolvendo o `response.model` em `model`. Pode ser desligado.
-- **Falhas:** tratadas dentro do adaptador, em camadas:
-  1. O SDK repete sozinho os erros temporários: 408, 409, 429, 5xx e falhas de conexão, com 2 tentativas extras por padrão (`maxRetries`).
-  2. Recusas passam pelo fallback de modelo.
-  3. Uma resposta cortada por `max_tokens` é repetida uma vez com um limite maior.
-  4. Se nada disso resolver, o adaptador rejeita com o motivo, e a biblioteca repassa o erro.
-- **Segurança:** o conteúdo da imagem é tratado como dado, e o extrator não tem ferramentas nem permissões.
+- **Key:** the adapter receives the key as an argument and never reads `process.env`. The caller decides where it comes from: the CLI and the eval runner read `ANTHROPIC_API_KEY`; another application uses whatever source it has.
+- **Export:** the adapter is public, under the `receipt-reader/claude` entry of `exports` in `package.json`. That way an application reuses the retries and fallback instead of reimplementing them. The `"."` entry still doesn't depend on Anthropic: anyone who doesn't import `receipt-reader/claude` never loads the SDK. Since it becomes public API, changing the signature of `createClaudeClient` is a breaking change.
+- **CLI:** replace the placeholder client with steps 2, 4 and 5 of "What the CLI does".
+- **README:** create one for library users. It should show how to install, an example with `createClaudeClient` and `readReceipt`, a sample result, and how to implement your own `ReceiptLlmClient`.
+- **Call:** official SDK with vision and `output_config.format`, no tools. `request.instructions` goes in the `system` parameter, and the user message contains only the image, no text. That way any text in the image that tries to give orders sits one level below our instructions.
+- **Initial model:** `claude-opus-5-5`, with an explicit `effort`, because thinking can't be turned off on this model.
+- **Refusal fallback:** enabled by default (`fallbacks: "default"`), returning `response.model` in `model`. It can be turned off.
+- **Failures:** handled inside the adapter, in layers:
+  1. The SDK retries transient errors on its own: 408, 409, 429, 5xx and connection failures, with 2 extra attempts by default (`maxRetries`).
+  2. Refusals go through the model fallback.
+  3. A response cut off by `max_tokens` is retried once with a higher limit.
+  4. If none of that works, the adapter rejects with the reason, and the library passes the error on.
+- **Security:** image content is treated as data, and the extractor has no tools or permissions.
 
-**Pronto quando:** houver um baseline zero-shot medido no `dev`. As metas de acurácia só serão definidas depois disso.
+**Done when:** there is a zero-shot baseline measured on `dev`. Accuracy targets will only be set after that.
 
-## Fase 5: experimentos de estudo
+## Phase 5: study experiments
 
-Cada experimento muda uma variável, medida no `dev`:
-1. **Zero-shot vs. few-shot:** quanto os exemplos melhoram cada campo?
-2. **Opus 5.5 vs. Sonnet 5.5 vs. Haiku 5.5:** qual tem o menor custo por documento correto?
-3. **Valores de `effort`:** a partir de qual nível a qualidade para de melhorar?
-4. **Resolução e pré-processamento:** reduzir, girar ou recortar a imagem ajuda ou prejudica?
-5. **Sinal de injeção:** com um campo `contains_instructions` no schema, o modelo marca as imagens com texto de injeção do dataset? Medir a precisão e o recall. Só se o resultado for bom, o campo entra no contrato, com um warning próprio (como `suspicious_content`) para quem usa a lib mandar esses recibos para revisão.
+Each experiment changes one variable, measured on `dev`:
+1. **Zero-shot vs. few-shot:** how much do examples improve each field?
+2. **Opus 5.5 vs. Sonnet 5.5 vs. Haiku 5.5:** which has the lowest cost per correct document?
+3. **`effort` values:** at which level does quality stop improving?
+4. **Resolution and preprocessing:** does downscaling, rotating or cropping the image help or hurt?
+5. **Injection signal:** with a `contains_instructions` field in the schema, does the model flag the dataset images with injection text? Measure precision and recall. Only if the result is good does the field go into the contract, with its own warning (such as `suspicious_content`) so library users can send those receipts to review.
 
-Preços de tabela por milhão de tokens de entrada e saída, conforme a referência de 06/10/2026 (confirme antes de usar):
+List prices per million input and output tokens, per the 2026-10-06 reference (confirm before using):
 
-| Modelo | ID | Entrada | Saída |
+| Model | ID | Input | Output |
 |---|---|---|---|
-| Opus 5.5 | `claude-opus-5-5` | $4,00 | $20,00 |
-| Sonnet 5.5 | `claude-sonnet-5-5` | $2,00 | $10,00 |
-| Haiku 5.5 | `claude-haiku-5-5` | $0,10 | $0,50 |
+| Opus 5.5 | `claude-opus-5-5` | $4.00 | $20.00 |
+| Sonnet 5.5 | `claude-sonnet-5-5` | $2.00 | $10.00 |
+| Haiku 5.5 | `claude-haiku-5-5` | $0.10 | $0.50 |
 
-A melhor configuração é medida uma vez no `test`, com a Batch API, que custa 50% menos.
+The best configuration is measured once on `test`, with the Batch API, which costs 50% less.
 
-**Pronto quando:** houver uma configuração escolhida e justificada com os números do `test`.
+**Done when:** there is a chosen configuration, justified with the `test` numbers.
 
-## Fase 6: fine-tuning (opcional)
+## Phase 6: fine-tuning (optional)
 
-Só vale a pena se sobrar um problema de custo ou acurácia. Os modelos Claude atuais não oferecem fine-tuning pela API, então a comparação seria um modelo ajustado no Vertex AI, ou um modelo aberto, contra o melhor resultado da Fase 5.
+Only worth it if a cost or accuracy problem remains. Current Claude models don't offer fine-tuning through the API, so the comparison would be a model tuned on Vertex AI, or an open model, against the best Phase 5 result.
 
-- **Pergunta:** um modelo barato ajustado alcança o melhor resultado com few-shot, com custo total menor?
-- **Dados:** `raw_output` mais correções humanas, se o sistema que consome o resultado guardar os dois.
-- **Cuidado:** revisores tendem a aceitar o valor já preenchido, então as correções podem ter viés. O resultado continua sendo medido no dataset de referência.
-- **Antes de começar:** confirmar a disponibilidade atual na documentação oficial do provedor.
+- **Question:** does a cheap tuned model match the best few-shot result, at a lower total cost?
+- **Data:** `raw_output` plus human corrections, if the system consuming the result stores both.
+- **Caveat:** reviewers tend to accept the pre-filled value, so corrections may be biased. The result is still measured on the reference dataset.
+- **Before starting:** confirm current availability in the provider's official documentation.
 
-"Não vale a pena" também é um resultado válido de estudo.
+"Not worth it" is also a valid study result.
 
-## Fase 7: operação contínua
+## Phase 7: ongoing operation
 
-- **Regressão:** rodar os evals a cada mudança de prompt ou modelo.
-- **Produção:** se o sistema que consome o resultado guardar o `raw_output` e as correções, acompanhar a taxa de correção por campo.
-- **Dataset:** transformar erros reais em novos casos de teste, depois de rotulá-los sem ver a saída do modelo.
+- **Regression:** run the evals on every prompt or model change.
+- **Production:** if the system consuming the result stores `raw_output` and corrections, track the correction rate per field.
+- **Dataset:** turn real errors into new test cases, after labeling them without seeing the model output.
 
-## Roadmap: mercado americano
+## Roadmap: US market
 
-Entra depois que o Brasil estiver medido no `test`. O formato do JSON não muda.
+Starts once Brazil has been measured on `test`. The JSON format doesn't change.
 
-- **Documentos:** *receipts* de loja e restaurante.
-- **Regras:** valores como `1,234.56` em `USD`, datas `MM/DD/YY`, e a soma passa a ser `subtotal + imposto + gorjeta = total`, porque o *sales tax* é somado no fim.
-- **Gorjeta:** muitas vezes escrita à mão.
-- **Dataset e evals próprios:** 50 a 100 *receipts* americanos rotulados, com o mesmo processo da Fase 2.
+- **Documents:** store and restaurant receipts.
+- **Rules:** amounts like `1,234.56` in `USD`, `MM/DD/YY` dates, and the sum becomes `subtotal + tax + tip = total`, because sales tax is added at the end.
+- **Tip:** often handwritten.
+- **Own dataset and evals:** 50 to 100 labeled US receipts, with the same process as Phase 2.
 
-**Pronto quando:** os evals americanos tiverem um baseline medido, sem piorar os resultados brasileiros.
+**Done when:** the US evals have a measured baseline, without worsening the Brazilian results.
 
-## Riscos
+## Risks
 
-- **Injeção de prompt:** um texto na imagem pode tentar alterar a saída. O extrator fica sem ferramentas, e a resistência é medida nos evals.
-- **Limitação do hash:** ele só identifica o mesmo arquivo. Quem usar o hash para deduplicar deve saber que duas fotos do mesmo recibo, ou uma imagem recomprimida, geram hashes diferentes.
-- **Privacidade (LGPD):** recibos podem ter CPF, nomes e dígitos finais de cartão. A biblioteca não extrai o CPF nem outros números de documento pessoal. A biblioteca não guarda nada, mas o dataset e os sistemas que consomem o resultado guardam. Defina quem acessa esses dados e por quanto tempo eles ficam guardados, e consulte o jurídico antes de usar dados reais.
-- **Benchmarks públicos:** não verificamos um dataset público de cupons brasileiros com rótulos. Os datasets conhecidos (como SROIE e CORD) são de outros países, então os resultados de outros estudos servem só como hipótese.
+- **Prompt injection:** text in the image may try to change the output. The extractor has no tools, and resistance is measured in the evals.
+- **Hash limitation:** it only identifies the same file. Anyone using the hash to deduplicate should know that two photos of the same receipt, or a recompressed image, produce different hashes.
+- **Privacy (LGPD):** receipts may contain a CPF, names and last card digits. The library doesn't extract the CPF or other personal document numbers. The library stores nothing, but the dataset and the systems consuming the result do. Define who can access that data and how long it is kept, and consult legal before using real data.
+- **Public benchmarks:** we haven't found a public labeled dataset of Brazilian receipts. The known datasets (such as SROIE and CORD) are from other countries, so results from other studies only serve as hypotheses.
 
-## Referências
+## References
 
-- [Vision vs. text parsing em invoices (arXiv 2509.04469)](https://arxiv.org/abs/2509.04469)
-- [Prompt design em faturas de energia (arXiv 2604.25927)](https://arxiv.org/html/2604.25927)
-- [Confiança em extração de campos (arXiv 2606.24420)](https://arxiv.org/abs/2606.24420)
-- [Avaliação de extração em produção (Hyperscience)](https://www.hyperscience.ai/?p=14167)
-- [Red team de injeção em document AI](https://prasannakumar018.github.io/Red-teaming/writeups/02_direct_prompt_injection)
-- [Ajuste supervisionado do Gemini (Vertex AI)](https://docs.cloud.google.com/vertex-ai/generative-ai/docs/models/gemini-supervised-tuning)
-- [Descontinuações da OpenAI, incluindo fine-tuning](https://developers.openai.com/api/docs/deprecations)
+- [Vision vs. text parsing on invoices (arXiv 2509.04469)](https://arxiv.org/abs/2509.04469)
+- [Prompt design on energy bills (arXiv 2604.25927)](https://arxiv.org/html/2604.25927)
+- [Confidence in field extraction (arXiv 2606.24420)](https://arxiv.org/abs/2606.24420)
+- [Evaluating extraction in production (Hyperscience)](https://www.hyperscience.ai/?p=14167)
+- [Injection red team on document AI](https://prasannakumar018.github.io/Red-teaming/writeups/02_direct_prompt_injection)
+- [Gemini supervised tuning (Vertex AI)](https://docs.cloud.google.com/vertex-ai/generative-ai/docs/models/gemini-supervised-tuning)
+- [OpenAI deprecations, including fine-tuning](https://developers.openai.com/api/docs/deprecations)
